@@ -1,0 +1,107 @@
+import {
+  ImageQuality,
+  ImageRatio,
+  PointLedgerType,
+  TaskType,
+  prisma,
+} from "@image-playground/db";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  createImageTask,
+  createRedemptionBatch,
+  dailyCheckIn,
+  grantPoints,
+  getServiceConfigView,
+  processImageTask,
+  redeemCode,
+  requireEmailConfig,
+  requireStorageConfig,
+  updateServiceConfig,
+} from "../src/index.js";
+
+const SERVICE_SECRET = "integration-s3-secret";
+const EMAIL_SECRET = "integration-email-secret";
+
+const databaseTestsEnabled = process.env.DATABASE_URL?.includes("image_playground_test") === true;
+const integration = describe.runIf(databaseTestsEnabled);
+
+async function resetDatabase(): Promise<void> {
+  await prisma.$transaction([
+    prisma.adminAuditLog.deleteMany(),
+    prisma.redemptionCode.deleteMany(),
+    prisma.redemptionBatch.deleteMany(),
+    prisma.dailyCheckIn.deleteMany(),
+    prisma.pointLedger.deleteMany(),
+    prisma.taskAsset.deleteMany(),
+    prisma.imageTask.deleteMany(),
+    prisma.pricingRule.deleteMany(),
+    prisma.appSetting.deleteMany(),
+    prisma.pointAccount.deleteMany(),
+    prisma.session.deleteMany(),
+    prisma.account.deleteMany(),
+    prisma.verification.deleteMany(),
+    prisma.user.deleteMany(),
+  ]);
+}
+
+async function createUser(email: string, role: "USER" | "ADMIN" = "USER") {
+  return prisma.user.create({
+    data: { email, name: email.split("@")[0] ?? "User", emailVerified: true, role, pointAccount: { create: {} } },
+  });
+}
+
+integration("数据库并发规则", () => {
+  beforeEach(resetDatabase);
+  afterAll(() => prisma.$disconnect());
+
+  it("并发扣积分时不会透支", async () => {
+    const user = await createUser("wallet@example.com");
+    await grantPoints({ userId: user.id, amount: 10, type: PointLedgerType.WELCOME, reason: "test", idempotencyKey: "welcome" });
+    const results = await Promise.allSettled(["a", "b"].map((key) => grantPoints({ userId: user.id, amount: -8, type: PointLedgerType.ADMIN_ADJUSTMENT, reason: "test", idempotencyKey: key })));
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(await prisma.pointAccount.findUnique({ where: { userId: user.id } })).toMatchObject({ balance: 2, frozen: 0 });
+  });
+
+  it("同一兑换码并发兑换只能成功一次", async () => {
+    const [admin, user] = await Promise.all([createUser("admin@example.com", "ADMIN"), createUser("redeem@example.com")]);
+    const { codes } = await createRedemptionBatch({ name: "并发测试", pointValue: 20, quantity: 1, adminId: admin.id });
+    const code = codes[0];
+    if (!code) throw new Error("测试兑换码未生成");
+    const results = await Promise.allSettled([redeemCode(user.id, code), redeemCode(user.id, code)]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(await prisma.pointAccount.findUnique({ where: { userId: user.id } })).toMatchObject({ balance: 20 });
+  });
+
+  it("同一天只能签到一次", async () => {
+    const user = await createUser("checkin@example.com");
+    await prisma.appSetting.createMany({ data: [{ key: "checkInMin", value: 3 }, { key: "checkInMax", value: 3 }] });
+    const results = await Promise.allSettled([dailyCheckIn(user.id), dailyCheckIn(user.id)]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(await prisma.pointAccount.findUnique({ where: { userId: user.id } })).toMatchObject({ balance: 3 });
+  });
+
+  it("自定义图像 API 配置失败后退回全部冻结积分", async () => {
+    const user = await createUser("task@example.com");
+    await grantPoints({ userId: user.id, amount: 10, type: PointLedgerType.WELCOME, reason: "test", idempotencyKey: "task-welcome" });
+    await prisma.pricingRule.create({ data: { type: TaskType.GENERATE, ratio: ImageRatio.SQUARE, quality: ImageQuality.STANDARD, pointCost: 4 } });
+    const task = await createImageTask(user.id, { type: TaskType.GENERATE, prompt: "test", ratio: ImageRatio.SQUARE, quality: ImageQuality.STANDARD, idempotencyKey: crypto.randomUUID() });
+    expect(await prisma.pointAccount.findUnique({ where: { userId: user.id } })).toMatchObject({ balance: 6, frozen: 4 });
+    await expect(processImageTask(task.id)).rejects.toThrow("服务配置尚未在管理后台保存");
+    expect(await prisma.pointAccount.findUnique({ where: { userId: user.id } })).toMatchObject({ balance: 10, frozen: 0 });
+  });
+
+  it("服务密钥只以密文保存并可在服务端解密", async () => {
+    await updateServiceConfig({
+      storage: { provider: "S3", localPath: "./storage", endpoint: "https://s3.example.test", region: "test-1", bucket: "images", accessKeyId: "access-key", secretAccessKey: SERVICE_SECRET, clearSecretAccessKey: false, forcePathStyle: true },
+      imageApi: { baseUrl: "https://images.example.test/v1", model: "image-model", generatePath: "generate", editPath: "edit", apiKey: "api-secret", clearApiKey: false },
+      email: { host: "smtp.example.test", port: 587, secure: false, from: "noreply@example.test", user: "mailer", password: EMAIL_SECRET, clearPassword: false },
+    });
+    const stored = await prisma.appSetting.findUniqueOrThrow({ where: { key: "serviceConfig" } });
+    expect(JSON.stringify(stored.value)).not.toContain(SERVICE_SECRET);
+    expect(JSON.stringify(stored.value)).not.toContain(EMAIL_SECRET);
+    const [view, storage, email] = await Promise.all([getServiceConfigView(), requireStorageConfig(), requireEmailConfig()]);
+    expect(view).toMatchObject({ configured: true, storage: { hasSecretAccessKey: true }, email: { hasPassword: true } });
+    expect(storage).toMatchObject({ provider: "S3", secretAccessKey: SERVICE_SECRET });
+    expect(email).toMatchObject({ password: EMAIL_SECRET });
+  });
+});

@@ -1,0 +1,22 @@
+{
+  "name": "image-playground",
+  "private": true,
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "build": "pnpm --filter @image-playground/db generate && pnpm --recursive --if-present build",
+    "dev": "pnpm --parallel --filter @image-playground/web --filter @image-playground/worker dev",
+    "dev:web": "pnpm --filter @image-playground/web dev",
+    "dev:worker": "pnpm --filter @image-playground/worker dev",
+    "config:migrate": "pnpm --filter @image-playground/core config:migrate",
+    "db:generate": "pnpm --filter @image-playground/db generate",
+    "db:migrate": "pnpm --filter @image-playground/db migrate",
+    "db:deploy": "pnpm --filter @image-playground/db run migrate:deploy",
+    "db:seed": "pnpm --filter @image-playground/db seed",
+    "test": "pnpm --filter @image-playground/core test",
+    "typecheck": "pnpm --recursive --if-present typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "typescript": "^5.9.3"
+  }
+}

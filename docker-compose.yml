@@ -1,0 +1,52 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: image_playground
+      POSTGRES_USER: image
+      POSTGRES_PASSWORD: image
+    ports: ["55432:5432"]
+    volumes: ["postgres-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U image -d image_playground"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:latest
+    ports: ["6520:6379"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    build: { context: ., target: web }
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql://image:image@postgres:5432/image_playground
+      REDIS_URL: redis://redis:6379
+    volumes: ["asset-data:/workspace/storage"]
+    ports: ["3000:3000"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  worker:
+    build: { context: ., target: worker }
+    env_file: [.env]
+    environment:
+      DATABASE_URL: postgresql://image:image@postgres:5432/image_playground
+      REDIS_URL: redis://redis:6379
+    volumes: ["asset-data:/workspace/storage"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+volumes:
+  postgres-data:
+  redis-data:
+  asset-data:

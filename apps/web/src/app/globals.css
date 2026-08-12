@@ -1,0 +1,126 @@
+@import "./auth-base.css";
+@import "./auth-desktop.css";
+@import "./workbench.css";
+@import "./workbench-upload.css";
+@import "./workbench-index.css";
+@import "./workbench-desktop.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Hallmark · genre: modern-minimal · macrostructure: Narrative Workflow / Workbench / Index-First · theme: Coral · design-system: design.md */
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body {
+    overflow-x: clip;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+
+  body {
+    min-height: 100dvh;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-body-stack);
+    font-variant-numeric: oldstyle-nums;
+  }
+
+  h1,
+  h2,
+  h3,
+  .font-display {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-family: var(--font-display-stack);
+    font-style: normal;
+  }
+
+  p,
+  dd,
+  td {
+    overflow-wrap: anywhere;
+  }
+
+  button,
+  a,
+  input,
+  select,
+  [role="button"],
+  [role="tab"] {
+    touch-action: manipulation;
+    white-space: nowrap;
+  }
+
+  textarea {
+    touch-action: manipulation;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background: var(--color-selection);
+    color: var(--color-ink);
+  }
+
+  .dark {
+    color-scheme: dark;
+  }
+}
+
+@layer components {
+  .page-container {
+    @apply mx-auto w-full max-w-[1440px];
+  }
+
+  .page-container,
+  .safe-page-x {
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+}
+
+@media (min-width: 40rem) {
+  .page-container,
+  .safe-page-x {
+    padding-left: max(1.5rem, env(safe-area-inset-left));
+    padding-right: max(1.5rem, env(safe-area-inset-right));
+  }
+
+}
+
+@media (min-width: 64rem) {
+  .page-container,
+  .safe-page-x {
+    padding-left: max(2rem, env(safe-area-inset-left));
+    padding-right: max(2rem, env(safe-area-inset-right));
+  }
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}

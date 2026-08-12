@@ -1,0 +1,162 @@
+/* Hallmark · pre-emit critique: P5 H5 E5 S5 R5 V5 · genre: modern-minimal · theme: Coral · designed-as-app
+ * macrostructure: Narrative Workflow / Mobile-first Workbench / Index-First · variation: action-first auth + result-first mobile tasks
+ * nav: N9 marketing / N1b desktop / two-row top tabs mobile / persistent admin rail · footer: Ft2
+ * slop: pass (1-58) · contrast: pass (40-41) · honest: pass (46) · chrome: pass (47) · tokens: pass (48) · icons: pass (30)
+ * responsive: pass (49) · mobile: pass (source audit 34, 50-57) · rendered screenshots: unavailable
+ */
+:root {
+  --color-paper-channel: 0.975 0.008 55;
+  --color-paper-2-channel: 0.948 0.011 55;
+  --color-paper-3-channel: 0.918 0.014 55;
+  --color-ink-channel: 0.185 0.018 38;
+  --color-ink-2-channel: 0.305 0.018 38;
+  --color-muted-channel: 0.445 0.018 38;
+  --color-rule-channel: 0.865 0.014 55;
+  --color-control-channel: 0.64 0.018 48;
+  --color-accent-channel: 0.535 0.185 29;
+  --color-accent-ink-channel: 0.985 0.005 55;
+  --color-accent-soft-channel: 0.925 0.035 29;
+  --color-accent-soft-ink-channel: 0.32 0.105 29;
+  --color-focus-channel: 0.285 0.07 250;
+  --color-error-channel: 0.49 0.19 25;
+  --color-error-ink-channel: 0.985 0.005 55;
+  --color-success-channel: 0.42 0.115 154;
+  --color-warning-channel: 0.52 0.13 72;
+
+  --color-paper: oklch(var(--color-paper-channel));
+  --color-paper-2: oklch(var(--color-paper-2-channel));
+  --color-paper-3: oklch(var(--color-paper-3-channel));
+  --color-ink: oklch(var(--color-ink-channel));
+  --color-ink-2: oklch(var(--color-ink-2-channel));
+  --color-muted: oklch(var(--color-muted-channel));
+  --color-rule: oklch(var(--color-rule-channel));
+  --color-control: oklch(var(--color-control-channel));
+  --color-accent: oklch(var(--color-accent-channel));
+  --color-accent-ink: oklch(var(--color-accent-ink-channel));
+  --color-focus: oklch(var(--color-focus-channel));
+  --color-error: oklch(var(--color-error-channel));
+  --color-success: oklch(var(--color-success-channel));
+  --color-warning: oklch(var(--color-warning-channel));
+  --color-selection: oklch(var(--color-accent-channel) / 0.16);
+
+  --background: var(--color-paper-channel);
+  --foreground: var(--color-ink-channel);
+  --card: 0.989 0.005 55;
+  --card-foreground: var(--color-ink-channel);
+  --popover: 0.989 0.005 55;
+  --popover-foreground: var(--color-ink-channel);
+  --primary: var(--color-accent-channel);
+  --primary-foreground: var(--color-accent-ink-channel);
+  --secondary: var(--color-paper-2-channel);
+  --secondary-foreground: var(--color-ink-channel);
+  --muted: var(--color-paper-2-channel);
+  --muted-foreground: var(--color-muted-channel);
+  --accent: var(--color-accent-soft-channel);
+  --accent-foreground: var(--color-accent-soft-ink-channel);
+  --destructive: var(--color-error-channel);
+  --destructive-foreground: var(--color-error-ink-channel);
+  --success: var(--color-success-channel);
+  --warning: var(--color-warning-channel);
+  --border: var(--color-rule-channel);
+  --control: var(--color-control-channel);
+  --input: var(--color-control-channel);
+  --ring: var(--color-focus-channel);
+
+  --font-display-stack: var(--font-display), "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-body-stack: var(--font-body), "PingFang SC", "Microsoft YaHei", sans-serif;
+
+  --space-3xs: 0.125rem;
+  --space-2xs: 0.25rem;
+  --space-xs: 0.5rem;
+  --space-sm: 0.75rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2.5rem;
+  --space-2xl: 4rem;
+  --space-3xl: 6rem;
+  --space-4xl: 9rem;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-md: 1.125rem;
+  --text-lg: 1.375rem;
+  --text-xl: 1.75rem;
+  --text-2xl: 2.25rem;
+  --text-display-s: clamp(2.4rem, 4vw + 0.5rem, 3.75rem);
+  --text-display: clamp(2.75rem, 5vw + 1rem, 5.25rem);
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro: 120ms;
+  --dur-short: 220ms;
+  --dur-long: 420ms;
+
+  --radius-sm: 0.25rem;
+  --radius-control: 0.375rem;
+  --radius-card: 0.5rem;
+  --radius-pill: 999px;
+  --radius: var(--radius-control);
+  --rule-thin: 1px;
+  --shadow-whisper: 0 1px 2px oklch(var(--color-ink-channel) / 0.06);
+
+  --measure-auth-form: 34rem;
+  --measure-auth-title: 14ch;
+  --measure-auth-lede: 52ch;
+  --size-auth-field-label: 4.5rem;
+  --size-auth-column: 24rem;
+  --size-field-description: 1.25rem;
+  --size-auth-form-skeleton: 31rem;
+  --size-auth-workflow-step: 8rem;
+  --size-touch-target: 2.75rem;
+  --line-heading-compact: 1.15;
+  --line-auth-title: 1.04;
+  --line-auth-description: 1.6;
+  --line-auth-lede: 1.7;
+  --opacity-pressed: 0.8;
+  --track-auth-intro: 1.15fr;
+  --track-auth-access: 0.85fr;
+
+  --measure-workbench-prompt: 72ch;
+  --size-workbench-canvas: 30rem;
+  --size-workbench-prompt: 12rem;
+  --size-workbench-upload: 10rem;
+  --size-workbench-index-image: 16rem;
+  --size-workspace-nav: 4rem;
+  --track-workbench-controls: 0.82fr;
+  --track-workbench-result: 1.18fr;
+  --line-workbench-title: 1.08;
+
+  --z-base: 1;
+  --z-raised: 10;
+  --z-sticky: 200;
+  --z-sticky-nav: 300;
+  --z-dropdown: 350;
+  --z-modal: 400;
+  --z-toast: 500;
+  --z-tooltip: 600;
+}
+
+.dark {
+  --color-paper-channel: 0.145 0.014 38;
+  --color-paper-2-channel: 0.185 0.016 38;
+  --color-paper-3-channel: 0.225 0.018 38;
+  --color-ink-channel: 0.945 0.008 55;
+  --color-ink-2-channel: 0.835 0.012 55;
+  --color-muted-channel: 0.705 0.014 55;
+  --color-rule-channel: 0.31 0.018 38;
+  --color-control-channel: 0.48 0.02 38;
+  --color-accent-channel: 0.695 0.15 29;
+  --color-accent-ink-channel: 0.15 0.025 29;
+  --color-accent-soft-channel: 0.255 0.045 29;
+  --color-accent-soft-ink-channel: 0.89 0.04 29;
+  --color-focus-channel: 0.82 0.08 250;
+  --color-error-channel: 0.68 0.15 25;
+  --color-error-ink-channel: 0.14 0.02 25;
+  --color-success-channel: 0.67 0.105 154;
+  --color-warning-channel: 0.74 0.115 72;
+
+  --card: 0.175 0.015 38;
+  --popover: 0.195 0.017 38;
+}

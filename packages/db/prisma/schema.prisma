@@ -1,0 +1,279 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum ThemePreference {
+  LIGHT
+  DARK
+  SYSTEM
+}
+
+enum TaskType {
+  GENERATE
+  EDIT
+}
+
+enum TaskStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum ImageRatio {
+  SQUARE
+  LANDSCAPE
+  PORTRAIT
+}
+
+enum ImageQuality {
+  STANDARD
+  HIGH
+}
+
+enum AssetRole {
+  PRIMARY
+  REFERENCE
+  RESULT
+  AVATAR
+}
+
+enum PointLedgerType {
+  WELCOME
+  CHECK_IN
+  REDEEM
+  TASK_RESERVE
+  TASK_SETTLE
+  TASK_RELEASE
+  ADMIN_ADJUSTMENT
+}
+
+model User {
+  id            String          @id @default(cuid())
+  name          String
+  email         String          @unique
+  emailVerified Boolean         @default(false)
+  image         String?
+  role          UserRole        @default(USER)
+  status        UserStatus      @default(ACTIVE)
+  theme         ThemePreference @default(SYSTEM)
+  deletedAt     DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  sessions       Session[]
+  accounts       Account[]
+  pointAccount   PointAccount?
+  pointLedgers   PointLedger[]
+  tasks          ImageTask[]
+  checkIns       DailyCheckIn[]
+  redeemedCodes RedemptionCode[] @relation("RedeemedBy")
+  createdBatches RedemptionBatch[] @relation("BatchCreator")
+  auditLogs      AdminAuditLog[] @relation("AuditActor")
+
+  @@index([status, createdAt])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+  accountId             String
+  providerId            String
+  userId                 String
+  accessToken            String?
+  refreshToken           String?
+  idToken                String?
+  accessTokenExpiresAt   DateTime?
+  refreshTokenExpiresAt  DateTime?
+  scope                  String?
+  password               String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  user                   User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@unique([providerId, accountId])
+}
+
+model Verification {
+  id         String   @id @default(cuid())
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+}
+
+model PointAccount {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  balance   Int      @default(0)
+  frozen    Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PointLedger {
+  id             String          @id @default(cuid())
+  userId         String
+  taskId         String?
+  type           PointLedgerType
+  amount         Int
+  balanceAfter   Int
+  frozenAfter    Int
+  reason         String
+  idempotencyKey String          @unique
+  createdAt      DateTime        @default(now())
+  user           User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  task           ImageTask?      @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([taskId])
+}
+
+model ImageTask {
+  id              String       @id @default(cuid())
+  userId          String
+  type            TaskType
+  status          TaskStatus   @default(QUEUED)
+  prompt          String
+  ratio           ImageRatio
+  quality         ImageQuality
+  pointCost       Int
+  idempotencyKey  String       @unique
+  sourceTaskId    String?
+  errorCode       String?
+  errorMessage    String?
+  providerRequestId String?
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  assetsPurgedAt  DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  user            User         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  assets          TaskAsset[]
+  pointLedgers    PointLedger[]
+
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
+  @@index([type, status])
+}
+
+model TaskAsset {
+  id        String    @id @default(cuid())
+  taskId    String
+  role      AssetRole
+  objectKey String    @unique
+  mimeType  String
+  bytes     Int
+  createdAt DateTime  @default(now())
+  task      ImageTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, role])
+}
+
+model PricingRule {
+  id        String       @id @default(cuid())
+  type      TaskType
+  ratio     ImageRatio
+  quality   ImageQuality
+  pointCost Int
+  active    Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@unique([type, ratio, quality])
+}
+
+model AppSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model DailyCheckIn {
+  id        String   @id @default(cuid())
+  userId    String
+  dateKey   String
+  reward    Int
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dateKey])
+  @@index([createdAt])
+}
+
+model RedemptionBatch {
+  id          String           @id @default(cuid())
+  name        String
+  pointValue  Int
+  quantity    Int
+  expiresAt   DateTime?
+  disabledAt  DateTime?
+  createdById String
+  createdAt   DateTime         @default(now())
+  createdBy   User             @relation("BatchCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  codes       RedemptionCode[]
+
+  @@index([createdAt])
+}
+
+model RedemptionCode {
+  id           String           @id @default(cuid())
+  batchId      String
+  codeHash     String           @unique
+  codeSuffix   String
+  redeemedById String?
+  redeemedAt   DateTime?
+  createdAt    DateTime         @default(now())
+  batch        RedemptionBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  redeemedBy   User?            @relation("RedeemedBy", fields: [redeemedById], references: [id], onDelete: SetNull)
+
+  @@index([batchId, redeemedAt])
+}
+
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  action     String
+  targetType String
+  targetId   String
+  details    Json
+  createdAt  DateTime @default(now())
+  actor      User     @relation("AuditActor", fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([actorId, createdAt])
+  @@index([targetType, targetId])
+}

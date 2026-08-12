@@ -1,0 +1,62 @@
+[
+  {
+    "date": "2026-08-12",
+    "scope": "app",
+    "macrostructure": "Workbench / Index-First",
+    "theme": "Coral",
+    "enrichment": "none",
+    "nav": "N1b stable workspace header / compact route tabs",
+    "footer": "none",
+    "brief": "Full creative image workbench redesign across generation, editing, history, credits, and client navigation"
+  },
+  {
+    "date": "2026-08-12",
+    "scope": "login",
+    "macrostructure": "Narrative Workflow / action-first authentication",
+    "theme": "Coral",
+    "enrichment": "product workflow canvas",
+    "nav": "minimal identity header",
+    "footer": "none",
+    "brief": "Responsive desktop and mobile login redesign"
+  },
+  {
+    "date": "2026-08-11",
+    "scope": "admin-settings",
+    "macrostructure": "Index-First / service configuration tabs",
+    "theme": "Coral",
+    "enrichment": "none",
+    "nav": "existing admin rail / mobile management menu",
+    "footer": "unchanged",
+    "brief": "Encrypted S3, image API, and SMTP configuration inside Admin"
+  },
+  {
+    "date": "2026-08-10",
+    "scope": "mobile-web",
+    "macrostructure": "Mobile-first Workbench / Index-First",
+    "theme": "Coral",
+    "enrichment": "none",
+    "nav": "N1b desktop / two-row top tabs mobile",
+    "footer": "Ft2 responsive utility strip",
+    "brief": "Mobile-first workflow pass across public, client, and admin surfaces"
+  },
+  {
+    "date": "2026-08-10",
+    "scope": "client-shell",
+    "macrostructure": "Workbench / Index-First",
+    "theme": "Coral",
+    "enrichment": "none",
+    "nav": "N1b always-solid top bar; center links=3; dropdowns=none",
+    "footer": "unchanged",
+    "brief": "Client app chrome moved from side rail to Vercel-style top navigation"
+  },
+  {
+    "date": "2026-08-10",
+    "scope": "app",
+    "macrostructure": "Narrative Workflow / Workbench / Index-First",
+    "theme": "Coral",
+    "enrichment": "Tier-A CSS canvas",
+    "nav": "N9 marketing / persistent app rail",
+    "footer": "Ft2 inline utility strip",
+    "brief": "Image Playground full application redesign with native shadcn UI"
+  }
+]

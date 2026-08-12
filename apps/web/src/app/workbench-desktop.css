@@ -1,0 +1,45 @@
+@media (min-width: 64rem) {
+  .workspace-main {
+    gap: var(--space-2xl);
+  }
+
+  .workspace-header__title {
+    font-size: var(--text-2xl);
+  }
+
+  .workspace-composer {
+    grid-template-columns: minmax(0, var(--track-workbench-controls)) minmax(0, var(--track-workbench-result));
+    align-items: start;
+  }
+
+  .workspace-output {
+    position: sticky;
+    top: var(--size-workspace-nav);
+  }
+
+  .workspace-panel__header,
+  .workspace-result__header,
+  .workspace-index__bar,
+  .workspace-ledger__header,
+  .workspace-panel__body,
+  .workspace-result__body,
+  .workspace-ledger__body {
+    padding: var(--space-lg);
+  }
+
+  .workspace-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workspace-history-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .workspace-balance__metric {
+    padding: var(--space-xl);
+  }
+
+  .workspace-balance__value {
+    font-size: var(--text-display-s);
+  }
+}

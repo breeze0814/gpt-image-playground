@@ -1,0 +1,11 @@
+{
+  "date": "2026-08-11",
+  "framework": "Next.js 15 App Router",
+  "component_system": "shadcn/ui new-york with CSS variables",
+  "font_stack": "Space Grotesk + DM Sans",
+  "source_palette": "HSL violet and green variables",
+  "target_palette": "OKLCH warm paper, charcoal ink, restrained oxide coral",
+  "motion": "motion-cut; no motion library; reduced motion freezes animation",
+  "spacing": "Tailwind default 4-point scale",
+  "scope": "11 web pages across marketing, app, and admin routes"
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@image-playground/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc --noEmit",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@image-playground/core": "workspace:*",
+    "@image-playground/db": "workspace:*",
+    "bullmq": "^5.80.2",
+    "dotenv": "^17.2.3",
+    "tsx": "^4.20.6"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
