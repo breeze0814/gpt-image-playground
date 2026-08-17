@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { Readable } from "node:stream";
 import path from "node:path";
 import { DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { DomainError } from "./errors";
@@ -67,12 +69,25 @@ export function isObjectOwnedByUser(userId: string, objectKey: string): boolean 
     && ["task", "avatar", "results"].includes(scope);
 }
 
+export interface ObjectStream {
+  body: ReadableStream<Uint8Array>;
+  length?: number;
+}
+
 interface AssetStorage {
   validateOwnedAsset(userId: string, asset: AssetInput): Promise<void>;
   readObject(objectKey: string): Promise<Buffer>;
+  readObjectStream(objectKey: string): Promise<ObjectStream>;
   writeObject(objectKey: string, body: Buffer, mimeType: string): Promise<void>;
   deleteObject(objectKey: string): Promise<void>;
   destroy?(): void;
+}
+
+function isMissingObjectError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const name = (error as { name?: unknown }).name;
+  const code = (error as { code?: unknown }).code;
+  return name === "NoSuchKey" || code === "ENOENT";
 }
 
 export class LocalAssetStorage {
@@ -98,7 +113,25 @@ export class LocalAssetStorage {
   }
 
   async readObject(objectKey: string): Promise<Buffer> {
-    return readFile(this.filePath(objectKey));
+    try {
+      return await readFile(this.filePath(objectKey));
+    } catch (error) {
+      if (isMissingObjectError(error)) throw new DomainError("OBJECT_NOT_FOUND", "图片不存在", 404);
+      throw error;
+    }
+  }
+
+  async readObjectStream(objectKey: string): Promise<ObjectStream> {
+    const filePath = this.filePath(objectKey);
+    let metadata;
+    try {
+      metadata = await stat(filePath);
+    } catch (error) {
+      if (isMissingObjectError(error)) throw new DomainError("OBJECT_NOT_FOUND", "图片不存在", 404);
+      throw error;
+    }
+    const nodeStream = createReadStream(filePath);
+    return { body: Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>, length: metadata.size };
   }
 
   async writeObject(objectKey: string, body: Buffer, mimeType: string): Promise<void> {
@@ -147,9 +180,31 @@ export class S3AssetStorage implements AssetStorage {
 
   async readObject(objectKey: string): Promise<Buffer> {
     objectKeySegments(objectKey);
-    const result = await this.client.send(new GetObjectCommand({ Bucket: this.config.bucket, Key: objectKey }));
+    let result;
+    try {
+      result = await this.client.send(new GetObjectCommand({ Bucket: this.config.bucket, Key: objectKey }));
+    } catch (error) {
+      if (isMissingObjectError(error)) throw new DomainError("OBJECT_NOT_FOUND", "图片不存在", 404);
+      throw error;
+    }
     if (!result.Body) throw new DomainError("ASSET_BODY_MISSING", "对象存储未返回文件内容", 502);
     return Buffer.from(await result.Body.transformToByteArray());
+  }
+
+  async readObjectStream(objectKey: string): Promise<ObjectStream> {
+    objectKeySegments(objectKey);
+    let result;
+    try {
+      result = await this.client.send(new GetObjectCommand({ Bucket: this.config.bucket, Key: objectKey }));
+    } catch (error) {
+      if (isMissingObjectError(error)) throw new DomainError("OBJECT_NOT_FOUND", "图片不存在", 404);
+      throw error;
+    }
+    if (!result.Body) throw new DomainError("ASSET_BODY_MISSING", "对象存储未返回文件内容", 502);
+    return {
+      body: result.Body.transformToWebStream() as ReadableStream<Uint8Array>,
+      ...(result.ContentLength !== undefined ? { length: result.ContentLength } : {}),
+    };
   }
 
   async writeObject(objectKey: string, body: Buffer, mimeType: string): Promise<void> {
@@ -207,6 +262,10 @@ export async function validateOwnedAsset(userId: string, asset: AssetInput): Pro
 
 export async function readObject(objectKey: string): Promise<Buffer> {
   return withStorage((adapter) => adapter.readObject(objectKey));
+}
+
+export async function readObjectStream(objectKey: string): Promise<ObjectStream> {
+  return withStorage((adapter) => adapter.readObjectStream(objectKey));
 }
 
 export async function writeObject(objectKey: string, body: Buffer, mimeType: string): Promise<void> {

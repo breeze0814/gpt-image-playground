@@ -30,7 +30,30 @@ describe("本地图片存储", () => {
     })).resolves.toBeUndefined();
     await expect(storage.readObject(objectKey)).resolves.toEqual(PNG_BYTES);
     await storage.deleteObject(objectKey);
-    await expect(storage.readObject(objectKey)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(storage.readObject(objectKey)).rejects.toMatchObject({ code: "OBJECT_NOT_FOUND", status: 404 });
+  });
+
+  it("流式读取返回完整内容与长度，缺失对象返回 404", async () => {
+    const objectKey = "results/user-1/image.png";
+    await storage.writeObject(objectKey, PNG_BYTES, "image/png");
+    const { body, length } = await storage.readObjectStream(objectKey);
+    expect(length).toBe(PNG_BYTES.byteLength);
+    const reader = body.getReader();
+    const chunks: Uint8Array[] = [];
+    let chunk = await reader.read();
+    while (!chunk.done) {
+      chunks.push(chunk.value);
+      chunk = await reader.read();
+    }
+    expect(Buffer.concat(chunks)).toEqual(PNG_BYTES);
+    await expect(storage.readObjectStream("task/user-1/missing.png")).rejects.toMatchObject({ code: "OBJECT_NOT_FOUND", status: 404 });
+  });
+
+  it("重复删除对象不报错", async () => {
+    const objectKey = "task/user-1/image.png";
+    await storage.writeObject(objectKey, PNG_BYTES, "image/png");
+    await storage.deleteObject(objectKey);
+    await expect(storage.deleteObject(objectKey)).resolves.toBeUndefined();
   });
 
   it("拒绝路径穿越和伪造的图片内容", async () => {
@@ -60,5 +83,29 @@ describe("S3 图片存储", () => {
     const command = send.mock.calls[0]?.[0];
     expect(command).toBeInstanceOf(PutObjectCommand);
     expect((command as PutObjectCommand).input).toMatchObject({ Bucket: "images", Key: "results/user-1/image.png", ContentType: "image/png" });
+  });
+
+  it("流式读取转发 S3 响应流并携带长度", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]));
+        controller.close();
+      },
+    });
+    const send = vi.fn().mockResolvedValue({ Body: { transformToWebStream: () => stream }, ContentLength: 3 });
+    const client = { send, destroy: vi.fn() } as unknown as S3Client;
+    const storage = new S3AssetStorage({ provider: "S3", region: "test-1", bucket: "images", accessKeyId: "access", secretAccessKey: "secret", forcePathStyle: true }, client);
+    const result = await storage.readObjectStream("results/user-1/image.png");
+    expect(result.length).toBe(3);
+    const reader = result.body.getReader();
+    const first = await reader.read();
+    expect(first.value).toEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it("读取缺失对象时映射为 404", async () => {
+    const send = vi.fn().mockRejectedValue(Object.assign(new Error("NoSuchKey"), { name: "NoSuchKey" }));
+    const client = { send, destroy: vi.fn() } as unknown as S3Client;
+    const storage = new S3AssetStorage({ provider: "S3", region: "test-1", bucket: "images", accessKeyId: "access", secretAccessKey: "secret", forcePathStyle: true }, client);
+    await expect(storage.readObject("results/user-1/missing.png")).rejects.toMatchObject({ code: "OBJECT_NOT_FOUND", status: 404 });
   });
 });
