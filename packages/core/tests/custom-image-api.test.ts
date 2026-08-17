@@ -41,17 +41,20 @@ describe("自定义图像 API", () => {
     });
   });
 
-  it("完整暴露非成功响应", async () => {
+  it("暴露非成功响应的状态码并截断错误详情", async () => {
+    const longDetail = "x".repeat(5_000);
     vi.stubGlobal("fetch", vi.fn<typeof fetch>().mockResolvedValue(
-      new Response("provider unavailable", { status: 503 }),
+      new Response(longDetail, { status: 503 }),
     ));
     const gateway = new CustomImageApiGateway(CONFIG);
-    await expect(gateway.generateImage({
+    const error = await gateway.generateImage({
       prompt: "test",
       ratio: ImageRatio.SQUARE,
       quality: ImageQuality.STANDARD,
       userId: "user-1",
-    })).rejects.toMatchObject({ code: "IMAGE_API_HTTP_503", status: 503 });
+    }).catch((reason: unknown) => reason);
+    expect(error).toMatchObject({ code: "IMAGE_API_HTTP_503", status: 503 });
+    expect((error as Error).message.length).toBeLessThan(300);
   });
 
   it("向编辑接口发送图片表单", async () => {

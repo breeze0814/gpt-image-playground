@@ -33,6 +33,8 @@ const imageResponseSchema = z.object({
 const REQUEST_TIMEOUT_MS = 120_000;
 const MAX_ATTEMPTS = 2;
 const RETRY_DELAY_BASE_MS = 500;
+// 上游错误详情只截断保存到任务记录，避免把上游内部信息完整透传给用户
+const MAX_ERROR_DETAIL_LENGTH = 200;
 
 export class ImageApiError extends Error {
   constructor(
@@ -75,9 +77,11 @@ async function fetchWithRetry(url: URL, init: RequestInit): Promise<Response> {
 async function parseResponse(response: Response): Promise<GeneratedImage> {
   if (!response.ok) {
     const detail = await response.text();
+    console.error(JSON.stringify({ event: "image-api-http-error", status: response.status, detail }));
+    const truncated = detail.slice(0, MAX_ERROR_DETAIL_LENGTH);
     throw new ImageApiError(
       `IMAGE_API_HTTP_${response.status}`,
-      `自定义图像 API 请求失败 (${response.status}): ${detail}`,
+      `自定义图像 API 请求失败 (${response.status})${truncated ? `: ${truncated}` : ""}`,
       response.status,
     );
   }
