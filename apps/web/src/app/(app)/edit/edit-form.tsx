@@ -1,7 +1,7 @@
 "use client";
 
 import { FileImage, LoaderCircle, SlidersHorizontal, UploadCloud, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FormField } from "@/components/form-field";
 import { TaskOptions } from "@/components/task-options";
 import { TaskResult } from "@/components/task-result";
@@ -53,6 +53,8 @@ export function EditForm() {
   const [taskId, setTaskId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // 网络重试时复用同一个幂等键，避免重复下单扣分；创建成功后换新键
+  const idempotencyKeyRef = useRef(crypto.randomUUID());
   const polled = useTaskPolling(taskId);
   useEffect(() => { void apiRequest<PricingView[]>("/api/pricing").then(setPricing).catch((reason: Error) => setError(reason.message)); }, []);
   const pointCost = useMemo(() => pricing.find((rule) => rule.type === "EDIT" && rule.ratio === ratio && rule.quality === quality)?.pointCost, [pricing, ratio, quality]);
@@ -60,7 +62,7 @@ export function EditForm() {
     event.preventDefault();
     if (!primary) { setError("请先选择需要修改的主图。"); return; }
     setLoading(true); setError("");
-    try { const [primaryAsset, referenceAssets] = await Promise.all([uploadImage(primary), Promise.all(references.map((file) => uploadImage(file)))]); const task = await apiRequest<{ id: string }>("/api/tasks", { method: "POST", body: JSON.stringify({ type: "EDIT", prompt, ratio, quality, primary: primaryAsset, references: referenceAssets, idempotencyKey: crypto.randomUUID() }) }); setTaskId(task.id); }
+    try { const [primaryAsset, referenceAssets] = await Promise.all([uploadImage(primary), Promise.all(references.map((file) => uploadImage(file)))]); const task = await apiRequest<{ id: string }>("/api/tasks", { method: "POST", body: JSON.stringify({ type: "EDIT", prompt, ratio, quality, primary: primaryAsset, references: referenceAssets, idempotencyKey: idempotencyKeyRef.current }) }); setTaskId(task.id); idempotencyKeyRef.current = crypto.randomUUID(); }
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : "修图任务创建失败，请检查图片后重试。"); }
     finally { setLoading(false); }
   }

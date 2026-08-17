@@ -1,7 +1,7 @@
 "use client";
 
 import { ImagePlus, LoaderCircle } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FormField } from "@/components/form-field";
 import { TaskOptions } from "@/components/task-options";
 import { TaskResult } from "@/components/task-result";
@@ -54,12 +54,14 @@ export function GenerateForm() {
   const [taskId, setTaskId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  // 网络重试时复用同一个幂等键，避免重复下单扣分；创建成功后换新键
+  const idempotencyKeyRef = useRef(crypto.randomUUID());
   const polled = useTaskPolling(taskId);
   useEffect(() => { void apiRequest<PricingView[]>("/api/pricing").then(setPricing).catch((reason: Error) => setError(reason.message)); }, []);
   const pointCost = useMemo(() => pricing.find((rule) => rule.type === "GENERATE" && rule.ratio === ratio && rule.quality === quality)?.pointCost, [pricing, ratio, quality]);
   async function submit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault(); setLoading(true); setError("");
-    try { const task = await apiRequest<{ id: string }>("/api/tasks", { method: "POST", body: JSON.stringify({ type: "GENERATE", prompt, ratio, quality, idempotencyKey: crypto.randomUUID() }) }); setTaskId(task.id); }
+    try { const task = await apiRequest<{ id: string }>("/api/tasks", { method: "POST", body: JSON.stringify({ type: "GENERATE", prompt, ratio, quality, idempotencyKey: idempotencyKeyRef.current }) }); setTaskId(task.id); idempotencyKeyRef.current = crypto.randomUUID(); }
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : "任务创建失败，请检查输入后重试。"); }
     finally { setLoading(false); }
   }
