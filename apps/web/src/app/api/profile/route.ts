@@ -1,4 +1,4 @@
-import { deleteObject } from "@image-playground/core";
+import { deleteObject, DomainError, isObjectOwnedByUser } from "@image-playground/core";
 import { ThemePreference, UserStatus, prisma } from "@image-playground/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -18,6 +18,12 @@ export async function PATCH(request: Request) {
   try {
     const session = await requireApiUser();
     const input = profileSchema.parse(await request.json());
+    if (input.image) {
+      // 更换头像后旧图会被删除，必须确认 key 属于当前用户且来自头像上传
+      if (!isObjectOwnedByUser(session.user.id, input.image) || !input.image.startsWith("avatar/")) {
+        throw new DomainError("INVALID_ASSET_OWNER", "头像图片不属于当前用户", 403);
+      }
+    }
     const previous = await prisma.user.findUniqueOrThrow({ where: { id: session.user.id } });
     const user = await prisma.user.update({
       where: { id: session.user.id },
