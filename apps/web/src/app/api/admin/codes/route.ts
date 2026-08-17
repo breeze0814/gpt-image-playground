@@ -1,4 +1,4 @@
-import { createRedemptionBatch } from "@image-playground/core";
+import { createRedemptionBatch, listRedemptionBatches } from "@image-playground/core";
 import { prisma } from "@image-playground/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -12,15 +12,12 @@ const batchSchema = z.object({
   expiresAt: z.string().datetime().nullable().optional(),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     await requireApiAdmin();
-    const batches = await prisma.redemptionBatch.findMany({
-      include: { _count: { select: { codes: { where: { redeemedAt: { not: null } } } } } },
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    });
-    return NextResponse.json(batches);
+    const rawPage = Number.parseInt(new URL(request.url).searchParams.get("page") ?? "1", 10);
+    const page = Number.isFinite(rawPage) ? Math.max(1, rawPage) : 1;
+    return NextResponse.json(await listRedemptionBatches(page));
   } catch (error) {
     return apiError(error);
   }

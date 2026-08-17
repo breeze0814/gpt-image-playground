@@ -19,24 +19,61 @@ export async function dashboardMetrics() {
   return { users, tasks, failedTasks, netPoints: points._sum.amount ?? 0, redeemedCodes: codes };
 }
 
-export async function listAdminUsers(query?: string) {
-  return prisma.user.findMany({
-    where: {
-      deletedAt: null,
-      ...(query ? { email: { contains: query, mode: "insensitive" } } : {}),
-    },
-    include: { pointAccount: true, _count: { select: { tasks: true } } },
-    orderBy: { createdAt: "desc" },
-    take: 100,
-  });
+export const ADMIN_PAGE_SIZE = 50;
+
+export interface AdminPage<T> {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
-export async function listAdminTasks() {
+export async function listAdminUsers(query?: string, page = 1) {
+  const where = {
+    deletedAt: null,
+    ...(query ? { email: { contains: query, mode: "insensitive" as const } } : {}),
+  };
+  const [items, total] = await prisma.$transaction([
+    prisma.user.findMany({
+      where,
+      include: { pointAccount: true, _count: { select: { tasks: true } } },
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * ADMIN_PAGE_SIZE,
+      take: ADMIN_PAGE_SIZE,
+    }),
+    prisma.user.count({ where }),
+  ]);
+  return { items, total, page, pageSize: ADMIN_PAGE_SIZE };
+}
+
+export async function listAdminTasks(page = 1): Promise<AdminPage<Awaited<ReturnType<typeof listAdminTaskRows>>[number]>> {
+  const [items, total] = await prisma.$transaction([
+    listAdminTaskRows(page),
+    prisma.imageTask.count(),
+  ]);
+  return { items, total, page, pageSize: ADMIN_PAGE_SIZE };
+}
+
+function listAdminTaskRows(page: number) {
   return prisma.imageTask.findMany({
     include: { user: { select: { email: true } }, assets: true },
     orderBy: { createdAt: "desc" },
-    take: 100,
+    skip: (page - 1) * ADMIN_PAGE_SIZE,
+    take: ADMIN_PAGE_SIZE,
   });
+}
+
+export async function listRedemptionBatches(page = 1) {
+  const [items, total] = await prisma.$transaction([
+    prisma.redemptionBatch.findMany({
+      include: { _count: { select: { codes: { where: { redeemedAt: { not: null } } } } } },
+      orderBy: { createdAt: "desc" },
+      skip: (page - 1) * ADMIN_PAGE_SIZE,
+      take: ADMIN_PAGE_SIZE,
+    }),
+    prisma.redemptionBatch.count(),
+  ]);
+  return { items, total, page, pageSize: ADMIN_PAGE_SIZE };
 }
 
 export async function setUserStatus(
