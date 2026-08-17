@@ -7,12 +7,15 @@ import {
 } from "@image-playground/db";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
+  claimImageTask,
+  completeImageTask,
   createImageTask,
   createRedemptionBatch,
   dailyCheckIn,
   grantPoints,
   getServiceConfigView,
   processImageTask,
+  recoverStaleTasks,
   redeemCode,
   requireEmailConfig,
   requireStorageConfig,
@@ -88,6 +91,34 @@ integration("数据库并发规则", () => {
     expect(await prisma.pointAccount.findUnique({ where: { userId: user.id } })).toMatchObject({ balance: 6, frozen: 4 });
     await expect(processImageTask(task.id)).rejects.toThrow("服务配置尚未在管理后台保存");
     expect(await prisma.pointAccount.findUnique({ where: { userId: user.id } })).toMatchObject({ balance: 10, frozen: 0 });
+  });
+
+  it("worker 崩溃后重新投递的任务可以再次认领，已有结果则不再认领", async () => {
+    const user = await createUser("reclaim@example.com");
+    await grantPoints({ userId: user.id, amount: 10, type: PointLedgerType.WELCOME, reason: "test", idempotencyKey: "reclaim-welcome" });
+    await prisma.pricingRule.create({ data: { type: TaskType.GENERATE, ratio: ImageRatio.SQUARE, quality: ImageQuality.STANDARD, pointCost: 4 } });
+    const task = await createImageTask(user.id, { type: TaskType.GENERATE, prompt: "reclaim", ratio: ImageRatio.SQUARE, quality: ImageQuality.STANDARD, idempotencyKey: crypto.randomUUID() });
+    expect(await claimImageTask(task.id)).toBe(true);
+    // BullMQ 检测到 worker 失联后重新投递 job，此时状态仍为 RUNNING 且没有结果
+    expect(await claimImageTask(task.id)).toBe(true);
+    await completeImageTask(task.id, { objectKey: `results/${user.id}/${task.id}/result.webp`, mimeType: "image/webp", bytes: 100 });
+    // 已生成结果后不再认领，避免重复调用上游
+    expect(await claimImageTask(task.id)).toBe(false);
+  });
+
+  it("回收扫描退款超时任务并重新入队卡在队列中的任务", async () => {
+    const user = await createUser("recovery@example.com");
+    await grantPoints({ userId: user.id, amount: 20, type: PointLedgerType.WELCOME, reason: "test", idempotencyKey: "recovery-welcome" });
+    await prisma.pricingRule.create({ data: { type: TaskType.GENERATE, ratio: ImageRatio.SQUARE, quality: ImageQuality.STANDARD, pointCost: 4 } });
+    const staleRunning = await createImageTask(user.id, { type: TaskType.GENERATE, prompt: "stale-running", ratio: ImageRatio.SQUARE, quality: ImageQuality.STANDARD, idempotencyKey: crypto.randomUUID() });
+    const staleQueued = await createImageTask(user.id, { type: TaskType.GENERATE, prompt: "stale-queued", ratio: ImageRatio.SQUARE, quality: ImageQuality.STANDARD, idempotencyKey: crypto.randomUUID() });
+    await prisma.imageTask.update({ where: { id: staleRunning.id }, data: { status: "RUNNING", startedAt: new Date(Date.now() - 20 * 60 * 1000) } });
+    await prisma.imageTask.update({ where: { id: staleQueued.id }, data: { createdAt: new Date(Date.now() - 20 * 60 * 1000) } });
+    const result = await recoverStaleTasks();
+    expect(result).toMatchObject({ failedRunning: 1, requeued: 1, failedQueued: 0 });
+    expect(await prisma.imageTask.findUnique({ where: { id: staleRunning.id } })).toMatchObject({ status: "FAILED", errorCode: "TASK_TIMEOUT" });
+    // 超时任务已退款；重新入队的任务仍冻结积分
+    expect(await prisma.pointAccount.findUnique({ where: { userId: user.id } })).toMatchObject({ balance: 16, frozen: 4 });
   });
 
   it("服务密钥只以密文保存并可在服务端解密", async () => {

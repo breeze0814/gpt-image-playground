@@ -7,6 +7,7 @@ import {
   cleanupQueue,
   processImageTask,
   purgeExpiredTaskAssets,
+  recoverStaleTasks,
   redisConnection,
 } from "@image-playground/core";
 
@@ -14,6 +15,7 @@ dotenv.config({ path: path.join(process.cwd(), "../..", ".env") });
 
 const IMAGE_WORKER_CONCURRENCY = 2;
 const CLEANUP_PATTERN = "0 3 * * *";
+const TASK_RECOVERY_PATTERN = "*/5 * * * *";
 
 const imageWorker = new Worker(
   IMAGE_QUEUE_NAME,
@@ -23,7 +25,7 @@ const imageWorker = new Worker(
 
 const cleanupWorker = new Worker(
   CLEANUP_QUEUE_NAME,
-  async () => purgeExpiredTaskAssets(),
+  async (job) => (job.name === "recover-stale-tasks" ? recoverStaleTasks() : purgeExpiredTaskAssets()),
   { connection: redisConnection(), concurrency: 1 },
 );
 
@@ -32,6 +34,12 @@ async function scheduleCleanup(): Promise<void> {
     jobId: "daily-asset-cleanup",
     repeat: { pattern: CLEANUP_PATTERN, tz: "Asia/Shanghai" },
     removeOnComplete: 30,
+    removeOnFail: 30,
+  });
+  await cleanupQueue().add("recover-stale-tasks", {}, {
+    jobId: "task-recovery",
+    repeat: { pattern: TASK_RECOVERY_PATTERN, tz: "Asia/Shanghai" },
+    removeOnComplete: 500,
     removeOnFail: 30,
   });
 }

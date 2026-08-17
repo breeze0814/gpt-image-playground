@@ -7,6 +7,7 @@ import {
   UserStatus,
   prisma,
 } from "@image-playground/db";
+import { TASK_QUEUED_TIMEOUT_MS, TASK_RECOVERY_BATCH_SIZE, TASK_RUNNING_TIMEOUT_MS } from "./constants";
 import { subDays } from "./time";
 import { DomainError, errorMessage } from "./errors";
 import { enqueueImageTask } from "./queue";
@@ -117,11 +118,65 @@ export async function createImageTask(userId: string, input: CreateTaskInput) {
 }
 
 export async function claimImageTask(taskId: string): Promise<boolean> {
+  // 任务可能因 worker 崩溃被 BullMQ 重新投递，此时状态仍是 RUNNING 且没有结果，
+  // 允许重新认领以便自动重试；已有 RESULT 的视为已成功，不再认领。
   const result = await prisma.imageTask.updateMany({
-    where: { id: taskId, status: TaskStatus.QUEUED },
+    where: {
+      id: taskId,
+      OR: [
+        { status: TaskStatus.QUEUED },
+        { status: TaskStatus.RUNNING, assets: { none: { role: AssetRole.RESULT } } },
+      ],
+    },
     data: { status: TaskStatus.RUNNING, startedAt: new Date(), errorCode: null, errorMessage: null },
   });
   return result.count === 1;
+}
+
+export interface TaskRecoveryResult {
+  failedRunning: number;
+  requeued: number;
+  failedQueued: number;
+}
+
+export async function recoverStaleTasks(): Promise<TaskRecoveryResult> {
+  const runningCutoff = new Date(Date.now() - TASK_RUNNING_TIMEOUT_MS);
+  const queuedCutoff = new Date(Date.now() - TASK_QUEUED_TIMEOUT_MS);
+  const [staleRunning, staleQueued] = await Promise.all([
+    prisma.imageTask.findMany({
+      where: {
+        status: TaskStatus.RUNNING,
+        startedAt: { lt: runningCutoff },
+        assets: { none: { role: AssetRole.RESULT } },
+      },
+      select: { id: true },
+      take: TASK_RECOVERY_BATCH_SIZE,
+    }),
+    prisma.imageTask.findMany({
+      where: { status: TaskStatus.QUEUED, createdAt: { lt: queuedCutoff } },
+      select: { id: true },
+      take: TASK_RECOVERY_BATCH_SIZE,
+    }),
+  ]);
+
+  let failedRunning = 0;
+  for (const task of staleRunning) {
+    const released = await failImageTask(task.id, "TASK_TIMEOUT", "任务处理超时，冻结积分已退回");
+    if (released) failedRunning += 1;
+  }
+
+  let requeued = 0;
+  let failedQueued = 0;
+  for (const task of staleQueued) {
+    try {
+      await enqueueImageTask(task.id);
+      requeued += 1;
+    } catch (error) {
+      const released = await failImageTask(task.id, "QUEUE_ENQUEUE_FAILED", errorMessage(error));
+      if (released) failedQueued += 1;
+    }
+  }
+  return { failedRunning, requeued, failedQueued };
 }
 
 export async function loadImageTask(taskId: string) {
