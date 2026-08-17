@@ -76,4 +76,37 @@ describe("自定义图像 API", () => {
     expect((form as FormData).get("size")).toBe("864x1536");
     expect((form as FormData).getAll("image")).toHaveLength(1);
   });
+
+  it("瞬时网络失败时自动重试一次", async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: [{ b64_json: IMAGE_BYTES.toString("base64") }],
+      }), { headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await new CustomImageApiGateway(CONFIG).generateImage({
+      prompt: "retry",
+      ratio: ImageRatio.SQUARE,
+      quality: ImageQuality.STANDARD,
+      userId: "user-1",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(result.bytes).toEqual(IMAGE_BYTES);
+  });
+
+  it("重试耗尽后报超时错误", async () => {
+    const timeout = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    const fetchMock = vi.fn<typeof fetch>().mockRejectedValue(timeout);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const gateway = new CustomImageApiGateway(CONFIG);
+    await expect(gateway.generateImage({
+      prompt: "timeout",
+      ratio: ImageRatio.SQUARE,
+      quality: ImageQuality.STANDARD,
+      userId: "user-1",
+    })).rejects.toMatchObject({ code: "IMAGE_API_TIMEOUT", status: 504 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

@@ -30,6 +30,10 @@ const imageResponseSchema = z.object({
   request_id: z.string().min(1).optional(),
 });
 
+const REQUEST_TIMEOUT_MS = 120_000;
+const MAX_ATTEMPTS = 2;
+const RETRY_DELAY_BASE_MS = 500;
+
 export class ImageApiError extends Error {
   constructor(
     public readonly code: string,
@@ -48,6 +52,24 @@ function endpoint(baseUrl: string, endpointPath: string): URL {
 
 function authorizationHeaders(apiKey?: string): HeadersInit {
   return apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+}
+
+async function fetchWithRetry(url: URL, init: RequestInit): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    } catch (error) {
+      lastError = error;
+      if (attempt < MAX_ATTEMPTS) {
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_BASE_MS * attempt));
+      }
+    }
+  }
+  if (lastError instanceof Error && lastError.name === "TimeoutError") {
+    throw new ImageApiError("IMAGE_API_TIMEOUT", `自定义图像 API 请求超时（${REQUEST_TIMEOUT_MS / 1000} 秒）`, 504);
+  }
+  throw new ImageApiError("IMAGE_API_NETWORK_ERROR", "自定义图像 API 请求失败", 502);
 }
 
 async function parseResponse(response: Response): Promise<GeneratedImage> {
@@ -86,7 +108,7 @@ export class CustomImageApiGateway implements ImageGateway {
   constructor(private readonly config: ImageApiConfig) {}
 
   async generateImage(request: GenerateImageRequest): Promise<GeneratedImage> {
-    const response = await fetch(endpoint(this.config.baseUrl, this.config.generatePath), {
+    const response = await fetchWithRetry(endpoint(this.config.baseUrl, this.config.generatePath), {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authorizationHeaders(this.config.apiKey) },
       body: JSON.stringify({
@@ -104,7 +126,7 @@ export class CustomImageApiGateway implements ImageGateway {
   async editImage(request: EditImageRequest): Promise<GeneratedImage> {
     const form = new FormData();
     appendEditFields(form, request, this.config);
-    const response = await fetch(endpoint(this.config.baseUrl, this.config.editPath), {
+    const response = await fetchWithRetry(endpoint(this.config.baseUrl, this.config.editPath), {
       method: "POST",
       headers: authorizationHeaders(this.config.apiKey),
       body: form,
