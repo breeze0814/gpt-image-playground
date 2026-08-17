@@ -11,7 +11,7 @@ import {
   redisConnection,
 } from "@image-playground/core";
 
-dotenv.config({ path: path.join(process.cwd(), "../..", ".env") });
+dotenv.config({ path: path.join(process.cwd(), "../..", ".env"), quiet: true });
 
 function concurrencyFromEnv(): number {
   const parsed = Number.parseInt(process.env.IMAGE_WORKER_CONCURRENCY ?? "2", 10);

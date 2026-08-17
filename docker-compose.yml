@@ -14,7 +14,7 @@ services:
       retries: 20
 
   redis:
-    image: redis:latest
+    image: redis:7-alpine
     ports: ["6520:6379"]
     volumes: ["redis-data:/data"]
     healthcheck:
@@ -24,24 +24,42 @@ services:
       retries: 20
 
   web:
-    build: { context: ., target: web }
+    build:
+      context: .
+      target: web
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:24-alpine}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
     env_file: [.env]
     environment:
       DATABASE_URL: postgresql://image:image@postgres:5432/image_playground
       REDIS_URL: redis://redis:6379
     volumes: ["asset-data:/workspace/storage"]
     ports: ["3000:3000"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health | grep -q '\"status\":\"ok\"'"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
 
   worker:
-    build: { context: ., target: worker }
+    build:
+      context: .
+      target: worker
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:24-alpine}
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
     env_file: [.env]
     environment:
       DATABASE_URL: postgresql://image:image@postgres:5432/image_playground
       REDIS_URL: redis://redis:6379
     volumes: ["asset-data:/workspace/storage"]
+    restart: unless-stopped
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

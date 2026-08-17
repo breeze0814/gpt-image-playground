@@ -1,9 +1,10 @@
-node_modules
-.next
+**/node_modules
+**/.next
+**/.next-dev
 .git
+.hallmark
 coverage
 *.log
 .env
 .env.*
-
 .tmp-*

@@ -5,18 +5,20 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc --noEmit",
-    "start": "tsx src/index.ts",
+    "build": "tsc --noEmit && esbuild src/index.ts --bundle --platform=node --format=cjs --outfile=dist/index.cjs --external:@prisma/client",
+    "start": "node dist/index.cjs",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@image-playground/core": "workspace:*",
     "@image-playground/db": "workspace:*",
+    "@prisma/client": "6.19.3",
     "bullmq": "^5.80.2",
-    "dotenv": "^17.2.3",
-    "tsx": "^4.20.6"
+    "dotenv": "^17.2.3"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
+    "tsx": "^4.20.6",
     "typescript": "^5.9.3"
   }
 }
