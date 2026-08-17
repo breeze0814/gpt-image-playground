@@ -135,11 +135,33 @@ export async function getServiceConfigView(): Promise<ServiceConfigView> {
   return viewOf(config ?? EMPTY_CONFIG, config !== null);
 }
 
-export async function updateServiceConfig(input: ServiceConfigUpdate): Promise<ServiceConfigView> {
+export async function updateServiceConfig(input: ServiceConfigUpdate, actorId?: string): Promise<ServiceConfigView> {
   const current = await readStoredConfig() ?? EMPTY_CONFIG;
   const config = buildStoredConfig(input, current);
   validateActiveStorage(config.storage, INVALID_INPUT_STATUS);
-  await prisma.appSetting.upsert({ where: { key: SERVICE_CONFIG_KEY }, update: { value: config as Prisma.InputJsonValue }, create: { key: SERVICE_CONFIG_KEY, value: config as Prisma.InputJsonValue } });
+  const secretsUpdated = {
+    storageSecret: Boolean(input.storage.secretAccessKey || input.storage.clearSecretAccessKey),
+    apiKey: Boolean(input.imageApi.apiKey || input.imageApi.clearApiKey),
+    smtpPassword: Boolean(input.email.password || input.email.clearPassword),
+  };
+  const audit = actorId
+    ? prisma.adminAuditLog.create({ data: {
+      actorId,
+      action: "SERVICE_CONFIG_UPDATED",
+      targetType: "AppSetting",
+      targetId: SERVICE_CONFIG_KEY,
+      details: {
+        storageProvider: input.storage.provider,
+        imageApiBaseUrl: input.imageApi.baseUrl,
+        emailHost: input.email.host,
+        secretsUpdated,
+      },
+    } })
+    : null;
+  await prisma.$transaction([
+    prisma.appSetting.upsert({ where: { key: SERVICE_CONFIG_KEY }, update: { value: config as Prisma.InputJsonValue }, create: { key: SERVICE_CONFIG_KEY, value: config as Prisma.InputJsonValue } }),
+    ...(audit ? [audit] : []),
+  ]);
   return viewOf(config, true);
 }
 

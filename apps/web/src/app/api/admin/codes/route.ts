@@ -47,12 +47,23 @@ const disableSchema = z.object({ batchId: z.string().min(1), disabled: z.boolean
 
 export async function PATCH(request: Request) {
   try {
-    await requireApiAdmin();
+    const session = await requireApiAdmin();
     const input = disableSchema.parse(await request.json());
-    await prisma.redemptionBatch.update({
-      where: { id: input.batchId },
-      data: { disabledAt: input.disabled ? new Date() : null },
-    });
+    await prisma.$transaction([
+      prisma.redemptionBatch.update({
+        where: { id: input.batchId },
+        data: { disabledAt: input.disabled ? new Date() : null },
+      }),
+      prisma.adminAuditLog.create({
+        data: {
+          actorId: session.user.id,
+          action: input.disabled ? "REDEMPTION_BATCH_DISABLED" : "REDEMPTION_BATCH_ENABLED",
+          targetType: "RedemptionBatch",
+          targetId: input.batchId,
+          details: {},
+        },
+      }),
+    ]);
     return NextResponse.json({ success: true });
   } catch (error) {
     return apiError(error);

@@ -24,21 +24,32 @@ export async function createRedemptionBatch(input: {
   adminId: string;
 }) {
   const codes = Array.from({ length: input.quantity }, generateCode);
-  const batch = await prisma.redemptionBatch.create({
-    data: {
-      name: input.name,
-      pointValue: input.pointValue,
-      quantity: input.quantity,
-      createdById: input.adminId,
-      ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
-      codes: {
-        create: codes.map((code) => ({
-          codeHash: hashRedemptionCode(code),
-          codeSuffix: code.slice(-6),
-        })),
+  // 大批量建码可能超过交互式事务默认的 5 秒超时
+  const batch = await prisma.$transaction(async (tx) => {
+    const created = await tx.redemptionBatch.create({
+      data: {
+        name: input.name,
+        pointValue: input.pointValue,
+        quantity: input.quantity,
+        createdById: input.adminId,
+        ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
+        codes: {
+          create: codes.map((code) => ({
+            codeHash: hashRedemptionCode(code),
+            codeSuffix: code.slice(-6),
+          })),
+        },
       },
-    },
-  });
+    });
+    await tx.adminAuditLog.create({ data: {
+      actorId: input.adminId,
+      action: "REDEMPTION_BATCH_CREATED",
+      targetType: "RedemptionBatch",
+      targetId: created.id,
+      details: { name: input.name, pointValue: input.pointValue, quantity: input.quantity, expiresAt: input.expiresAt?.toISOString() ?? null },
+    } });
+    return created;
+  }, { timeout: 60_000 });
   return { batch, codes };
 }
 

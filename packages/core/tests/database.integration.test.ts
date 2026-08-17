@@ -159,6 +159,20 @@ integration("数据库并发规则", () => {
     expect(await prisma.imageTask.findUnique({ where: { id: withFile.id } })).toMatchObject({ assetsPurgedAt: expect.any(Date) });
   });
 
+  it("创建兑换码批次和修改服务配置会写入审计日志", async () => {
+    const admin = await createUser("audit@example.com", "ADMIN");
+    const { batch } = await createRedemptionBatch({ name: "审计测试", pointValue: 10, quantity: 2, adminId: admin.id });
+    await updateServiceConfig({
+      storage: { provider: "LOCAL", localPath: "./storage", endpoint: "", region: "", bucket: "", accessKeyId: "", secretAccessKey: "", clearSecretAccessKey: false, forcePathStyle: false },
+      imageApi: { baseUrl: "https://images.example.test/v1", model: "image-model", generatePath: "generate", editPath: "edit", apiKey: "api-secret", clearApiKey: false },
+      email: { host: "", port: 587, secure: false, from: "", user: "", password: "", clearPassword: false },
+    }, admin.id);
+    const logs = await prisma.adminAuditLog.findMany({ where: { actorId: admin.id }, orderBy: { createdAt: "asc" } });
+    expect(logs.map((log) => log.action)).toEqual(["REDEMPTION_BATCH_CREATED", "SERVICE_CONFIG_UPDATED"]);
+    expect(logs[0]).toMatchObject({ targetType: "RedemptionBatch", targetId: batch.id });
+    expect(logs[1]?.details).toMatchObject({ storageProvider: "LOCAL", secretsUpdated: { apiKey: true } });
+  });
+
   it("服务密钥只以密文保存并可在服务端解密", async () => {
     await updateServiceConfig({
       storage: { provider: "S3", localPath: "./storage", endpoint: "https://s3.example.test", region: "test-1", bucket: "images", accessKeyId: "access-key", secretAccessKey: SERVICE_SECRET, clearSecretAccessKey: false, forcePathStyle: true },

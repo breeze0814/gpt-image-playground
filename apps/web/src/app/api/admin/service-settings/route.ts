@@ -18,9 +18,9 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
-    await requireApiAdmin();
+    const session = await requireApiAdmin();
     const input = serviceConfigUpdateSchema.parse(await request.json());
-    return NextResponse.json(await updateServiceConfig(input));
+    return NextResponse.json(await updateServiceConfig(input, session.user.id));
   } catch (error) {
     return apiError(error);
   }
