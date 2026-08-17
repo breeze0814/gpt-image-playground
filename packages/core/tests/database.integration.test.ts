@@ -84,6 +84,8 @@ integration("数据库并发规则", () => {
     await prisma.appSetting.createMany({ data: [{ key: "checkInMin", value: 3 }, { key: "checkInMax", value: 3 }] });
     const results = await Promise.allSettled([dailyCheckIn(user.id), dailyCheckIn(user.id)]);
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((result) => result.status === "rejected");
+    expect(rejected?.status === "rejected" ? rejected.reason : null).toMatchObject({ code: "ALREADY_CHECKED_IN", status: 409 });
     expect(await prisma.pointAccount.findUnique({ where: { userId: user.id } })).toMatchObject({ balance: 3 });
   });
 

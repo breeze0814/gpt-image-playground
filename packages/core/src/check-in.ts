@@ -1,4 +1,4 @@
-import { PointLedgerType, prisma } from "@image-playground/db";
+import { PointLedgerType, Prisma, prisma } from "@image-playground/db";
 import { randomInt } from "node:crypto";
 import { DomainError } from "./errors";
 import { getNumericSetting, SETTING_KEYS } from "./settings";
@@ -30,7 +30,16 @@ export async function dailyCheckIn(userId: string) {
       where: { userId_dateKey: { userId, dateKey } },
     });
     if (existing) throw new DomainError("ALREADY_CHECKED_IN", "今天已经签到过了", 409);
-    const checkIn = await tx.dailyCheckIn.create({ data: { userId, dateKey, reward } });
+    let checkIn;
+    try {
+      checkIn = await tx.dailyCheckIn.create({ data: { userId, dateKey, reward } });
+    } catch (error) {
+      // 并发请求同时通过上面的查询时，唯一约束兜底，映射为业务冲突
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        throw new DomainError("ALREADY_CHECKED_IN", "今天已经签到过了", 409);
+      }
+      throw error;
+    }
     await creditWithinTransaction(tx, {
       userId,
       amount: reward,
