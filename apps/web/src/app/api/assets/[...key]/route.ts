@@ -26,7 +26,8 @@ export async function GET(_request: Request, context: RouteContext) {
       headers: {
         "Content-Type": mimeTypeForObjectKey(objectKey),
         "Content-Length": String(body.byteLength),
-        "Cache-Control": "private, no-store",
+        // objectKey 由随机 UUID 组成且内容不可变，替换图片会生成新 key
+        "Cache-Control": "private, max-age=31536000, immutable",
       },
     });
   } catch (error) {
