@@ -16,7 +16,7 @@ export async function GET() {
   try {
     await requireApiAdmin();
     const batches = await prisma.redemptionBatch.findMany({
-      include: { _count: { select: { codes: true } }, codes: { where: { redeemedAt: { not: null } }, select: { id: true } } },
+      include: { _count: { select: { codes: { where: { redeemedAt: { not: null } } } } } },
       orderBy: { createdAt: "desc" },
       take: 100,
     });
