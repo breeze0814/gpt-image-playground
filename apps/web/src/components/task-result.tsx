@@ -26,9 +26,11 @@ function PendingResult() {
 }
 
 function ResultImage({ url, prompt }: { url: string; prompt: string }) {
+  // prompt 最长可达 32000 字符，alt 文本只保留开头的描述
+  const description = prompt.slice(0, 120);
   return (
     <figure className="grid gap-3">
-      <div className="workspace-result__image"><Image src={url} alt={prompt} fill sizes="(max-width: 1024px) 100vw, 48vw" unoptimized className="object-contain" /></div>
+      <div className="workspace-result__image"><Image src={url} alt={description} fill sizes="(max-width: 1024px) 100vw, 48vw" unoptimized className="object-contain" /></div>
       <a href={url} download className={cn(buttonVariants({ variant: "outline" }), "w-full sm:w-auto sm:justify-self-end")}><Download className="size-4" />下载结果</a>
     </figure>
   );

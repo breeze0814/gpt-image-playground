@@ -15,6 +15,8 @@ import { uploadImage } from "@/lib/upload-client";
 
 const MAX_REFERENCE_IMAGES = 3;
 const BYTES_PER_MEGABYTE = 1024 * 1024;
+const LAST_TASK_KEY = "edit-last-task-id";
+const ACTIVE_STATUSES = new Set(["QUEUED", "RUNNING"]);
 
 function FileList({ files, onRemove }: { files: File[]; onRemove: (index: number) => void }) {
   return <div className="workspace-file-list">{files.map((file, index) => <div key={`${file.name}-${file.lastModified}`} className="workspace-file"><FileImage className="size-4 shrink-0 text-primary" /><span className="min-w-0 flex-1 truncate">{file.name}</span><span className="text-xs tabular-nums text-muted-foreground">{(file.size / BYTES_PER_MEGABYTE).toFixed(1)} MB</span><Button type="button" variant="ghost" size="icon" aria-label={`移除 ${file.name}`} title={`移除 ${file.name}`} onClick={() => onRemove(index)}><X className="size-4" /></Button></div>)}</div>;
@@ -57,12 +59,25 @@ export function EditForm() {
   const idempotencyKeyRef = useRef(crypto.randomUUID());
   const polled = useTaskPolling(taskId);
   useEffect(() => { void apiRequest<PricingView[]>("/api/pricing").then(setPricing).catch((reason: Error) => setError(reason.message)); }, []);
+  // 刷新页面后恢复进行中的任务；任务结束后清理，下次进入显示空画布
+  useEffect(() => {
+    const saved = window.localStorage.getItem(LAST_TASK_KEY);
+    if (saved) setTaskId(saved);
+  }, []);
+  useEffect(() => {
+    if (polled.task && !ACTIVE_STATUSES.has(polled.task.status)) {
+      window.localStorage.removeItem(LAST_TASK_KEY);
+    }
+  }, [polled.task]);
+  useEffect(() => {
+    if (polled.error) window.localStorage.removeItem(LAST_TASK_KEY);
+  }, [polled.error]);
   const pointCost = useMemo(() => pricing.find((rule) => rule.type === "EDIT" && rule.ratio === ratio && rule.quality === quality)?.pointCost, [pricing, ratio, quality]);
   async function submit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
     if (!primary) { setError("请先选择需要修改的主图。"); return; }
     setLoading(true); setError("");
-    try { const [primaryAsset, referenceAssets] = await Promise.all([uploadImage(primary), Promise.all(references.map((file) => uploadImage(file)))]); const task = await apiRequest<{ id: string }>("/api/tasks", { method: "POST", body: JSON.stringify({ type: "EDIT", prompt, ratio, quality, primary: primaryAsset, references: referenceAssets, idempotencyKey: idempotencyKeyRef.current }) }); setTaskId(task.id); idempotencyKeyRef.current = crypto.randomUUID(); }
+    try { const [primaryAsset, referenceAssets] = await Promise.all([uploadImage(primary), Promise.all(references.map((file) => uploadImage(file)))]); const task = await apiRequest<{ id: string }>("/api/tasks", { method: "POST", body: JSON.stringify({ type: "EDIT", prompt, ratio, quality, primary: primaryAsset, references: referenceAssets, idempotencyKey: idempotencyKeyRef.current }) }); setTaskId(task.id); window.localStorage.setItem(LAST_TASK_KEY, task.id); idempotencyKeyRef.current = crypto.randomUUID(); }
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : "修图任务创建失败，请检查图片后重试。"); }
     finally { setLoading(false); }
   }

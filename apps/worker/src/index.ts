@@ -13,14 +13,18 @@ import {
 
 dotenv.config({ path: path.join(process.cwd(), "../..", ".env") });
 
-const IMAGE_WORKER_CONCURRENCY = 2;
+function concurrencyFromEnv(): number {
+  const parsed = Number.parseInt(process.env.IMAGE_WORKER_CONCURRENCY ?? "2", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 2;
+}
+
 const CLEANUP_PATTERN = "0 3 * * *";
 const TASK_RECOVERY_PATTERN = "*/5 * * * *";
 
 const imageWorker = new Worker(
   IMAGE_QUEUE_NAME,
   async (job) => processImageTask(job.data.taskId as string),
-  { connection: redisConnection(), concurrency: IMAGE_WORKER_CONCURRENCY },
+  { connection: redisConnection(), concurrency: concurrencyFromEnv() },
 );
 
 const cleanupWorker = new Worker(

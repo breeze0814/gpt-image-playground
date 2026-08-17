@@ -13,6 +13,8 @@ import { apiRequest, type PricingView, type TaskView } from "@/lib/client-api";
 import { cn } from "@/lib/utils";
 
 const MAX_PROMPT_LENGTH = 32_000;
+const LAST_TASK_KEY = "generate-last-task-id";
+const ACTIVE_STATUSES = new Set(["QUEUED", "RUNNING"]);
 
 function EmptyResult() {
   return (
@@ -58,10 +60,23 @@ export function GenerateForm() {
   const idempotencyKeyRef = useRef(crypto.randomUUID());
   const polled = useTaskPolling(taskId);
   useEffect(() => { void apiRequest<PricingView[]>("/api/pricing").then(setPricing).catch((reason: Error) => setError(reason.message)); }, []);
+  // 刷新页面后恢复进行中的任务；任务结束后清理，下次进入显示空画布
+  useEffect(() => {
+    const saved = window.localStorage.getItem(LAST_TASK_KEY);
+    if (saved) setTaskId(saved);
+  }, []);
+  useEffect(() => {
+    if (polled.task && !ACTIVE_STATUSES.has(polled.task.status)) {
+      window.localStorage.removeItem(LAST_TASK_KEY);
+    }
+  }, [polled.task]);
+  useEffect(() => {
+    if (polled.error) window.localStorage.removeItem(LAST_TASK_KEY);
+  }, [polled.error]);
   const pointCost = useMemo(() => pricing.find((rule) => rule.type === "GENERATE" && rule.ratio === ratio && rule.quality === quality)?.pointCost, [pricing, ratio, quality]);
   async function submit(event: React.FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault(); setLoading(true); setError("");
-    try { const task = await apiRequest<{ id: string }>("/api/tasks", { method: "POST", body: JSON.stringify({ type: "GENERATE", prompt, ratio, quality, idempotencyKey: idempotencyKeyRef.current }) }); setTaskId(task.id); idempotencyKeyRef.current = crypto.randomUUID(); }
+    try { const task = await apiRequest<{ id: string }>("/api/tasks", { method: "POST", body: JSON.stringify({ type: "GENERATE", prompt, ratio, quality, idempotencyKey: idempotencyKeyRef.current }) }); setTaskId(task.id); window.localStorage.setItem(LAST_TASK_KEY, task.id); idempotencyKeyRef.current = crypto.randomUUID(); }
     catch (requestError) { setError(requestError instanceof Error ? requestError.message : "任务创建失败，请检查输入后重试。"); }
     finally { setLoading(false); }
   }
