@@ -1,6 +1,7 @@
 import {
   createObjectKey,
   DomainError,
+  MAX_UPLOAD_BYTES,
   uploadRequestSchema,
   writeObject,
 } from "@image-playground/core";
@@ -8,9 +9,19 @@ import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
 import { requireApiUser } from "@/lib/session";
 
+// multipart 表单除文件本体外还有少量元数据开销
+const MAX_MULTIPART_BODY_BYTES = MAX_UPLOAD_BYTES + 2 * 1024 * 1024;
+
 export async function POST(request: Request) {
   try {
     const session = await requireApiUser();
+    const declaredLength = request.headers.get("content-length");
+    if (declaredLength) {
+      const length = Number(declaredLength);
+      if (Number.isFinite(length) && length > MAX_MULTIPART_BODY_BYTES) {
+        throw new DomainError("UPLOAD_TOO_LARGE", "上传内容超过大小限制", 413);
+      }
+    }
     const form = await request.formData();
     const file = form.get("file");
     if (!(file instanceof File)) {
