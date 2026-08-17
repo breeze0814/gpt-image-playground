@@ -1,4 +1,5 @@
 import {
+  consumeRateLimit,
   createImageTask,
   createTaskSchema,
   listRecentTasks,
@@ -7,6 +8,8 @@ import {
 import { NextResponse } from "next/server";
 import { apiError } from "@/lib/api";
 import { requireApiUser } from "@/lib/session";
+
+const CREATE_TASK_RATE_LIMIT = { limit: 10, windowSeconds: 60 };
 
 export async function GET() {
   try {
@@ -21,6 +24,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const session = await requireApiUser();
+    await consumeRateLimit("create-task", session.user.id, CREATE_TASK_RATE_LIMIT);
     const input = createTaskSchema.parse(await request.json());
     const task = await createImageTask(session.user.id, input);
     return NextResponse.json({ id: task.id, status: task.status }, { status: 201 });

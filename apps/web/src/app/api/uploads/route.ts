@@ -1,4 +1,5 @@
 import {
+  consumeRateLimit,
   createObjectKey,
   DomainError,
   MAX_UPLOAD_BYTES,
@@ -11,10 +12,12 @@ import { requireApiUser } from "@/lib/session";
 
 // multipart 表单除文件本体外还有少量元数据开销
 const MAX_MULTIPART_BODY_BYTES = MAX_UPLOAD_BYTES + 2 * 1024 * 1024;
+const UPLOAD_RATE_LIMIT = { limit: 20, windowSeconds: 60 };
 
 export async function POST(request: Request) {
   try {
     const session = await requireApiUser();
+    await consumeRateLimit("upload", session.user.id, UPLOAD_RATE_LIMIT);
     const declaredLength = request.headers.get("content-length");
     if (declaredLength) {
       const length = Number(declaredLength);

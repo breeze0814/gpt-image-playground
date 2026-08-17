@@ -5,6 +5,7 @@ export * from "./constants";
 export * from "./errors";
 export * from "./custom-image-api";
 export * from "./queue";
+export * from "./rate-limit";
 export * from "./redis";
 export * from "./redemption";
 export * from "./schemas";
