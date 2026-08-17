@@ -72,6 +72,25 @@ export type StorageConfig =
 export interface ImageApiConfig { readonly baseUrl: string; readonly apiKey?: string; readonly model: string; readonly generatePath: string; readonly editPath: string }
 export interface EmailConfig { readonly host: string; readonly port: number; readonly secure: boolean; readonly from: string; readonly user?: string; readonly password?: string }
 
+// 服务配置是高频路径（每次对象读写都会用到），用短 TTL 缓存避免
+// 每个请求都查库 + AES 解密；多实例部署下配置变更最多延迟 TTL 生效。
+const CONFIG_CACHE_TTL_MS = 5_000;
+
+interface CachedValue<T> {
+  readonly value: T;
+  readonly expiresAt: number;
+}
+
+let storedConfigCache: CachedValue<StoredServiceConfig | null> | undefined;
+let storageConfigCache: CachedValue<StorageConfig> | undefined;
+let imageApiConfigCache: CachedValue<ImageApiConfig> | undefined;
+let emailConfigCache: CachedValue<EmailConfig> | undefined;
+
+function readCache<T>(entry: CachedValue<T> | undefined): T | undefined {
+  if (!entry) return undefined;
+  return Date.now() < entry.expiresAt ? entry.value : undefined;
+}
+
 const EMPTY_CONFIG: StoredServiceConfig = {
   version: 1,
   storage: { provider: "LOCAL", localPath: DEFAULT_LOCAL_PATH, endpoint: "", region: "", bucket: "", accessKeyId: "", secretAccessKey: null, forcePathStyle: false },
@@ -83,12 +102,20 @@ function invalidConfig(message: string, status = INTERNAL_CONFIG_STATUS): Domain
   return new DomainError("INVALID_SERVICE_CONFIG", message, status);
 }
 
-async function readStoredConfig(): Promise<StoredServiceConfig | null> {
+async function readStoredConfig(options: { force?: boolean } = {}): Promise<StoredServiceConfig | null> {
+  if (!options.force) {
+    const cached = readCache(storedConfigCache);
+    if (cached !== undefined) return cached;
+  }
   const setting = await prisma.appSetting.findUnique({ where: { key: SERVICE_CONFIG_KEY } });
-  if (!setting) return null;
-  const result = storedConfigSchema.safeParse(setting.value);
-  if (!result.success) throw invalidConfig("数据库中的服务配置格式无效");
-  return result.data;
+  let config: StoredServiceConfig | null = null;
+  if (setting) {
+    const result = storedConfigSchema.safeParse(setting.value);
+    if (!result.success) throw invalidConfig("数据库中的服务配置格式无效");
+    config = result.data;
+  }
+  storedConfigCache = { value: config, expiresAt: Date.now() + CONFIG_CACHE_TTL_MS };
+  return config;
 }
 
 function secretKey(): string {
@@ -136,7 +163,7 @@ export async function getServiceConfigView(): Promise<ServiceConfigView> {
 }
 
 export async function updateServiceConfig(input: ServiceConfigUpdate, actorId?: string): Promise<ServiceConfigView> {
-  const current = await readStoredConfig() ?? EMPTY_CONFIG;
+  const current = await readStoredConfig({ force: true }) ?? EMPTY_CONFIG;
   const config = buildStoredConfig(input, current);
   validateActiveStorage(config.storage, INVALID_INPUT_STATUS);
   const secretsUpdated = {
@@ -162,6 +189,11 @@ export async function updateServiceConfig(input: ServiceConfigUpdate, actorId?: 
     prisma.appSetting.upsert({ where: { key: SERVICE_CONFIG_KEY }, update: { value: config as Prisma.InputJsonValue }, create: { key: SERVICE_CONFIG_KEY, value: config as Prisma.InputJsonValue } }),
     ...(audit ? [audit] : []),
   ]);
+  // 保存后立即让缓存生效，避免管理端保存完还要等 TTL
+  storedConfigCache = { value: config, expiresAt: Date.now() + CONFIG_CACHE_TTL_MS };
+  storageConfigCache = undefined;
+  imageApiConfigCache = undefined;
+  emailConfigCache = undefined;
   return viewOf(config, true);
 }
 
@@ -172,24 +204,37 @@ async function requireStoredConfig(): Promise<StoredServiceConfig> {
 }
 
 export async function requireStorageConfig(): Promise<StorageConfig> {
+  const cached = readCache(storageConfigCache);
+  if (cached) return cached;
   const { storage } = await requireStoredConfig();
   validateActiveStorage(storage);
-  if (storage.provider === "LOCAL") return { provider: "LOCAL", localPath: storage.localPath };
-  return { provider: "S3", ...(storage.endpoint ? { endpoint: storage.endpoint } : {}), region: storage.region, bucket: storage.bucket, accessKeyId: storage.accessKeyId, secretAccessKey: openSecret(storage.secretAccessKey!, secretKey()), forcePathStyle: storage.forcePathStyle };
+  const resolved: StorageConfig = storage.provider === "LOCAL"
+    ? { provider: "LOCAL", localPath: storage.localPath }
+    : { provider: "S3", ...(storage.endpoint ? { endpoint: storage.endpoint } : {}), region: storage.region, bucket: storage.bucket, accessKeyId: storage.accessKeyId, secretAccessKey: openSecret(storage.secretAccessKey!, secretKey()), forcePathStyle: storage.forcePathStyle };
+  storageConfigCache = { value: resolved, expiresAt: Date.now() + CONFIG_CACHE_TTL_MS };
+  return resolved;
 }
 
 export async function requireImageApiConfig(): Promise<ImageApiConfig> {
+  const cached = readCache(imageApiConfigCache);
+  if (cached) return cached;
   const { imageApi } = await requireStoredConfig();
   if (!imageApi.baseUrl || !imageApi.model || !imageApi.generatePath || !imageApi.editPath) {
     throw invalidConfig("图像 API 地址、模型或接口路径尚未配置");
   }
-  return { baseUrl: imageApi.baseUrl, model: imageApi.model, generatePath: imageApi.generatePath, editPath: imageApi.editPath, ...(imageApi.apiKey ? { apiKey: openSecret(imageApi.apiKey, secretKey()) } : {}) };
+  const resolved: ImageApiConfig = { baseUrl: imageApi.baseUrl, model: imageApi.model, generatePath: imageApi.generatePath, editPath: imageApi.editPath, ...(imageApi.apiKey ? { apiKey: openSecret(imageApi.apiKey, secretKey()) } : {}) };
+  imageApiConfigCache = { value: resolved, expiresAt: Date.now() + CONFIG_CACHE_TTL_MS };
+  return resolved;
 }
 
 export async function requireEmailConfig(): Promise<EmailConfig> {
+  const cached = readCache(emailConfigCache);
+  if (cached) return cached;
   const { email } = await requireStoredConfig();
   if (!email.host || !email.from) throw invalidConfig("邮件服务器或发件人尚未配置");
   const password = email.password ? openSecret(email.password, secretKey()) : "";
   if (Boolean(email.user) !== Boolean(password)) throw invalidConfig("SMTP 用户名和密码必须同时配置或同时留空");
-  return { host: email.host, port: email.port, secure: email.secure, from: email.from, ...(email.user ? { user: email.user, password } : {}) };
+  const resolved: EmailConfig = { host: email.host, port: email.port, secure: email.secure, from: email.from, ...(email.user ? { user: email.user, password } : {}) };
+  emailConfigCache = { value: resolved, expiresAt: Date.now() + CONFIG_CACHE_TTL_MS };
+  return resolved;
 }

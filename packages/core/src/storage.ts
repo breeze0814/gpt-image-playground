@@ -172,18 +172,33 @@ export class S3AssetStorage implements AssetStorage {
 
 async function createStorage(): Promise<AssetStorage> {
   const config = await requireStorageConfig();
+  return adapterFor(config);
+}
+
+let cachedAdapter: { signature: string; adapter: AssetStorage } | undefined;
+
+function adapterSignature(config: StorageConfig): string {
   return config.provider === "LOCAL"
+    ? `local:${resolveProjectPath(config.localPath)}`
+    : `s3:${config.endpoint ?? ""}|${config.region}|${config.bucket}|${config.accessKeyId}|${config.secretAccessKey}|${config.forcePathStyle}`;
+}
+
+// 复用同一个存储适配器（S3 客户端连接池 / 本地路径），
+// 配置变化导致签名变化时惰性替换并销毁旧适配器。
+function adapterFor(config: StorageConfig): AssetStorage {
+  const signature = adapterSignature(config);
+  if (cachedAdapter?.signature === signature) return cachedAdapter.adapter;
+  cachedAdapter?.adapter.destroy?.();
+  const adapter = config.provider === "LOCAL"
     ? new LocalAssetStorage(resolveProjectPath(config.localPath))
     : new S3AssetStorage(config);
+  cachedAdapter = { signature, adapter };
+  return adapter;
 }
 
 async function withStorage<T>(operation: (adapter: AssetStorage) => Promise<T>): Promise<T> {
   const adapter = await createStorage();
-  try {
-    return await operation(adapter);
-  } finally {
-    adapter.destroy?.();
-  }
+  return operation(adapter);
 }
 
 export async function validateOwnedAsset(userId: string, asset: AssetInput): Promise<void> {
