@@ -11,3 +11,5 @@ packages/db/generated
 playwright-report
 test-results
 storage
+
+.tmp-*
