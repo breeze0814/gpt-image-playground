@@ -111,7 +111,13 @@ export class LocalAssetStorage {
   }
 
   async deleteObject(objectKey: string): Promise<void> {
-    await unlink(this.filePath(objectKey));
+    try {
+      await unlink(this.filePath(objectKey));
+    } catch (error) {
+      // 清理任务重试时对象可能已被删除，ENOENT 视为已删除
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
   }
 }
 

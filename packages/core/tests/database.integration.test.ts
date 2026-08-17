@@ -5,6 +5,9 @@ import {
   TaskType,
   prisma,
 } from "@image-playground/db";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   claimImageTask,
@@ -15,6 +18,7 @@ import {
   grantPoints,
   getServiceConfigView,
   processImageTask,
+  purgeExpiredTaskAssets,
   recoverStaleTasks,
   redeemCode,
   requireEmailConfig,
@@ -119,6 +123,38 @@ integration("数据库并发规则", () => {
     expect(await prisma.imageTask.findUnique({ where: { id: staleRunning.id } })).toMatchObject({ status: "FAILED", errorCode: "TASK_TIMEOUT" });
     // 超时任务已退款；重新入队的任务仍冻结积分
     expect(await prisma.pointAccount.findUnique({ where: { userId: user.id } })).toMatchObject({ balance: 16, frozen: 4 });
+  });
+
+  it("清理过期资产时单个任务对象缺失不中断整批清理", async () => {
+    const user = await createUser("cleanup@example.com");
+    const directory = await mkdtemp(path.join(os.tmpdir(), "ip-cleanup-"));
+    await updateServiceConfig({
+      storage: { provider: "LOCAL", localPath: directory, endpoint: "", region: "", bucket: "", accessKeyId: "", secretAccessKey: "", clearSecretAccessKey: false, forcePathStyle: false },
+      imageApi: { baseUrl: "", model: "", generatePath: "generate", editPath: "edit", apiKey: "", clearApiKey: false },
+      email: { host: "", port: 587, secure: false, from: "", user: "", password: "", clearPassword: false },
+    });
+    const createExpired = async (suffix: string) => prisma.imageTask.create({
+      data: {
+        userId: user.id,
+        type: TaskType.GENERATE,
+        status: "SUCCEEDED",
+        prompt: `cleanup-${suffix}`,
+        ratio: ImageRatio.SQUARE,
+        quality: ImageQuality.STANDARD,
+        pointCost: 4,
+        idempotencyKey: crypto.randomUUID(),
+        createdAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000),
+        assets: { create: { role: "RESULT", objectKey: `results/${user.id}/cleanup-${suffix}.webp`, mimeType: "image/webp", bytes: 4 } },
+      },
+    });
+    const withFile = await createExpired("a");
+    const missingFile = await createExpired("b");
+    await mkdir(path.join(directory, "results", user.id), { recursive: true });
+    await writeFile(path.join(directory, "results", user.id, `cleanup-a.webp`), "test");
+    // b 的对象在上一轮清理中已被删除，重试时不应报错
+    expect(await purgeExpiredTaskAssets()).toBe(2);
+    expect(await prisma.taskAsset.count({ where: { taskId: { in: [withFile.id, missingFile.id] } } })).toBe(0);
+    expect(await prisma.imageTask.findUnique({ where: { id: withFile.id } })).toMatchObject({ assetsPurgedAt: expect.any(Date) });
   });
 
   it("服务密钥只以密文保存并可在服务端解密", async () => {
